@@ -7,6 +7,11 @@ ARG COMPOSER_IMAGE=composer:latest
 ARG EXTENSION_INSTALLER_IMAGE=ghcr.io/mlocati/php-extension-installer:latest
 
 FROM ${NODE_IMAGE} AS nodejs
+
+# Refresh npm and its compatible dependencies before copying runtime files.
+COPY --chmod=755 scripts/refresh-npm.sh /usr/local/bin/refresh-npm
+RUN refresh-npm
+
 FROM ${COMPOSER_IMAGE} AS composer
 FROM ${EXTENSION_INSTALLER_IMAGE} AS extension-installer
 

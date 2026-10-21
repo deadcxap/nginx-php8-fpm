@@ -15,7 +15,7 @@ the original author's prebuilt image.
 | --- | --- |
 | PHP | Official `php:fpm-alpine`, latest stable PHP and default Alpine release |
 | Node.js | Official `node:lts-alpine<release>`, latest LTS on the same Alpine release as PHP |
-| npm | Version shipped with that official Node.js image |
+| npm | Latest stable `npm@latest`, with fresh dependencies within its declared version ranges |
 | nginx and dynamic modules | Latest packages from the official nginx mainline repository |
 | Composer | Official `composer:latest` |
 | PHP extensions | Bundled PHP extensions and stable PECL releases |
@@ -32,7 +32,11 @@ PHP extensions are installed with
 using the latest installer image. It manages their native dependencies and removes
 temporary build tools. Imagick uses a stable release without the previous local
 source patch. Composer is copied from its official image instead of downloading
-an installer over HTTP. Optional mirrors are disabled by default.
+an installer over HTTP. npm and its bundled runtime dependencies are refreshed
+separately because even the newest npm release can contain outdated dependencies.
+This respects npm's declared version ranges and enforces Node engine compatibility;
+it does not force incompatible dependency versions. Optional mirrors are disabled
+by default.
 
 Floating channels also bring major upgrades. A new PHP release may temporarily
 be incompatible with an extension, or the matching Node/nginx Alpine packages
@@ -226,7 +230,7 @@ redis soap sockets zip
 
 The smoke test checks required modules, GD JPEG/FreeType/WebP support, PNG
 encoding with Imagick, a Brotli round trip and SQLite through PDO. It also tests
-Node crypto, npm/npx, HTTP execution of PHP, static files, missing PHP files,
+Node crypto, offline npm packing/installation and npx execution, HTTP execution of PHP, static files, missing PHP files,
 runtime overrides, Laravel directory permissions and container restart.
 
 To install another extension in your own image:

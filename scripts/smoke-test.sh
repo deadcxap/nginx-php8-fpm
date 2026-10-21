@@ -21,9 +21,8 @@ docker run --rm --mount "type=bind,src=$PWD/tests/php-check.php,dst=/tmp/php-che
     "$image" php /tmp/php-check.php
 docker run --rm "$image" composer --version
 if [[ "$variant" == with-node ]]; then
-    docker run --rm "$image" node -e 'if (require("node:crypto").randomBytes(16).length !== 16) process.exit(1)'
-    docker run --rm "$image" npm --version
-    docker run --rm "$image" npx --version
+    docker run --rm --mount "type=bind,src=$PWD/tests/npm-check.sh,dst=/tmp/npm-check.sh,readonly" \
+        "$image" sh /tmp/npm-check.sh
 else
     docker run --rm "$image" sh -ec '! command -v node; ! command -v npm'
 fi
