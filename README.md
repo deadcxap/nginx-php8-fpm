@@ -81,7 +81,7 @@ The workflow in `.github/workflows/images.yml` runs:
 
 - on pushes to `master`;
 - on pull requests, with testing only and no package write permission;
-- daily at **03:17 UTC** (06:17 Moscow time);
+- every Monday at **03:17 UTC** (06:17 Moscow time);
 - manually through **Actions → Build, test and publish images → Run workflow**;
 - through an authenticated `repository_dispatch` event of type `rebuild`.
 
@@ -122,7 +122,7 @@ Review and merge its update PRs to refresh the workflow tools.
 ### Keeping an inactive repository building
 
 GitHub can disable scheduled workflows in public repositories after 60 days
-without repository activity. Daily builds do not provide a reliable exception
+without repository activity. Scheduled builds do not provide a reliable exception
 to this rule. For unattended operation, use a scheduler outside this repository
 to send a `rebuild` event, or re-enable the schedule when GitHub disables it.
 
@@ -185,6 +185,9 @@ replaced by the shared `without-node` target and `start.sh`. The old
 | --- | --- |
 | `WEBROOT` | `/var/www/html`; use `/var/www/html/public` for Laravel |
 | `TZ` | `UTC`; accepts installed timezone names such as `Europe/Moscow` |
+| `PUID` | `101`; numeric user ID for nginx and PHP-FPM workers |
+| `PGID` | `101`; numeric primary group ID for nginx and PHP-FPM workers |
+| `UMASK` | `022`; mask for startup scripts and supervised processes, e.g. `002` or `0002` for group-writable files |
 | `PHP_MEM_LIMIT` | `128` MiB; integer |
 | `PHP_POST_MAX_SIZE` | `100` MiB; integer |
 | `PHP_UPLOAD_MAX_FILESIZE` | `100` MiB; integer |
@@ -218,6 +221,20 @@ listens on `/var/run/php-fpm.sock`. Make application files readable by the worke
 and writable application directories writable by it. Runtime PHP settings are
 regenerated on startup, so restarting does not accumulate duplicate directives.
 
+For Unraid, set `PUID=99`, `PGID=100` and `UMASK=022` in the container template.
+The `nginx` account uses those numeric IDs, including when the group ID already
+exists in Alpine. IDs must be decimal integers from 1 to 4294967294; UID/GID 0
+are rejected. `UMASK` accepts three octal digits with an optional leading zero.
+Restarting preserves these settings. Keep the container's default root startup
+user so it can configure the accounts before nginx/PHP-FPM drop privileges.
+
+Application bind mounts are not automatically chowned or chmodded. Their writable
+directories must already permit the selected UID/GID to write. The existing opt-in
+`CREATE_LARAVEL_STORAGE=1` still creates and chowns Laravel's storage directory.
+The mask affects newly created files; it does not change permissions of existing
+files or grant access to directories. Default file modes are 0644 with `022` and
+0664 with `002`, unless the application explicitly requests stricter permissions.
+
 ## PHP extensions and derived images
 
 Besides the official PHP image's built-in extensions, the image installs:
@@ -231,7 +248,9 @@ redis soap sockets zip
 The smoke test checks required modules, GD JPEG/FreeType/WebP support, PNG
 encoding with Imagick, a Brotli round trip and SQLite through PDO. It also tests
 Node crypto, offline npm packing/installation and npx execution, HTTP execution of PHP, static files, missing PHP files,
-runtime overrides, Laravel directory permissions and container restart.
+runtime overrides, Laravel directory permissions and container restart. Bind-mount
+checks verify PHP worker IDs, ownership and modes of created files/directories,
+nginx access, unchanged application ownership and invalid runtime settings.
 
 To install another extension in your own image:
 

@@ -13,6 +13,9 @@ cleanup() {
         if (( status != 0 )); then docker logs "$container" >&2 || true; fi
         docker rm -f "$container" >/dev/null || true
     fi
+    # Permission checks create files owned by container UIDs in this temp folder.
+    docker run --rm --mount "type=bind,src=$fixture_dir,dst=/fixture" \
+        "$image" chown -hR "$(id -u):$(id -g)" /fixture >/dev/null || true
     rm -rf "$fixture_dir"
 }
 trap cleanup EXIT
@@ -77,4 +80,47 @@ wait_for_php "$expected"
 config_after=$(docker exec "$container" sha256sum /usr/local/etc/php/conf.d/zz-runtime.ini /usr/local/etc/php-fpm.d/zzz-app.conf)
 [[ "$config_before" == "$config_after" ]]
 docker exec "$container" supervisorctl status
+docker rm -f "$container" >/dev/null
+container=
+
+# Exercise defaults and Unraid IDs against a real bind mount, including the
+# existing Alpine GID 100, a non-default umask and restarting the same container.
+for settings in '101:101:022:0644:0755' '99:100:022:0644:0755' \
+                '99:100:0002:0664:0775' '99:100:077:0600:0700'; do
+    IFS=: read -r worker_uid worker_gid mask file_mode directory_mode <<< "$settings"
+    permission_dir="$fixture_dir/permissions-$worker_uid-$worker_gid-$mask"
+    mkdir -p "$permission_dir/writable"
+    chmod 755 "$permission_dir"
+    cp tests/permissions-fixture.php "$permission_dir/index.php"
+    docker run --rm --mount "type=bind,src=$permission_dir,dst=/fixture" "$image" \
+        sh -ec 'chown "$1:$2" /fixture/writable; chmod 750 /fixture/writable' sh "$worker_uid" "$worker_gid"
+    ownership_before=$(stat -c '%u:%g:%a' "$permission_dir" "$permission_dir/index.php" "$permission_dir/writable")
+    runtime_options=()
+    if [[ "$worker_uid" != 101 ]]; then
+        runtime_options=(-e "PUID=$worker_uid" -e "PGID=$worker_gid" -e "UMASK=$mask")
+    fi
+    container=$(docker create "${runtime_options[@]}" \
+        --mount "type=bind,src=$permission_dir,dst=/var/www/html" "$image")
+    docker start "$container" >/dev/null
+    expected=$(printf '{"uid":%s,"gid":%s,"umask":"%03o","file_uid":%s,"file_gid":%s,"file_mode":"%s","directory_mode":"%s"}' \
+        "$worker_uid" "$worker_gid" "$((8#$mask))" "$worker_uid" "$worker_gid" "$file_mode" "$directory_mode")
+    wait_for_php "$expected"
+    # With UMASK=077 this also proves nginx workers have the same UID as PHP.
+    [[ "$(docker exec "$container" curl --fail --silent http://127.0.0.1/writable/from-php.txt)" == written-by-php ]]
+    docker restart --time 15 "$container" >/dev/null
+    wait_for_php "$expected"
+    ownership_after=$(stat -c '%u:%g:%a' "$permission_dir" "$permission_dir/index.php" "$permission_dir/writable")
+    [[ "$ownership_before" == "$ownership_after" ]]
+    docker rm -f "$container" >/dev/null
+    container=
+done
+
+for invalid_setting in PUID=0 PGID=0 PUID=-1 PGID=invalid PUID=4294967295 UMASK=888 UMASK=00000; do
+    if output=$(docker run --rm -e "$invalid_setting" "$image" 2>&1); then
+        echo "Invalid setting was accepted: $invalid_setting" >&2
+        exit 1
+    fi
+    [[ "$output" == *"${invalid_setting%%=*} must be"* ]]
+done
+echo 'Worker IDs, bind-mount permissions, umask and validation checks passed.'
 echo "Smoke tests passed: $image ($variant)"

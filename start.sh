@@ -1,6 +1,36 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+worker_uid=${PUID:-101}
+worker_gid=${PGID:-101}
+worker_umask=${UMASK:-022}
+for setting in "PUID:$worker_uid" "PGID:$worker_gid"; do
+    value=${setting#*:}
+    if [[ ! "$value" =~ ^[0-9]{1,10}$ ]] || (( 10#$value < 1 || 10#$value > 4294967294 )); then
+        echo "${setting%%:*} must be an integer from 1 to 4294967294." >&2
+        exit 1
+    fi
+done
+if [[ ! "$worker_umask" =~ ^0?[0-7]{3}$ ]]; then
+    echo 'UMASK must be three octal digits, optionally prefixed with 0 (for example 022 or 0002).' >&2
+    exit 1
+fi
+worker_uid=$((10#$worker_uid))
+worker_gid=$((10#$worker_gid))
+
+# Keep the nginx account name used by nginx/PHP-FPM, but map its numeric IDs to
+# the host owner. Existing IDs are allowed (Alpine already has a users GID 100).
+if [[ "$(id -g nginx)" != "$worker_gid" ]]; then
+    groupmod --non-unique --gid "$worker_gid" nginx
+fi
+if [[ "$(id -u nginx)" != "$worker_uid" ]]; then
+    usermod --non-unique --uid "$worker_uid" nginx
+fi
+mkdir -p /var/cache/nginx
+chown -hR nginx:nginx /var/cache/nginx
+# Application bind mounts retain their existing ownership and permissions.
+umask "$worker_umask"
+
 if [[ -n "${COMPOSERMIRROR:-}" ]]; then
     composer config --global repos.packagist composer "$COMPOSERMIRROR"
 fi
@@ -107,4 +137,5 @@ fi
 
 nginx -t
 php-fpm -t
-exec /usr/bin/supervisord -n -c /etc/supervisord.conf
+# Supervisor otherwise resets its own and its children's mask to 022.
+exec /usr/bin/supervisord -n -c /etc/supervisord.conf --umask "$worker_umask"
