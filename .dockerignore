@@ -1,0 +1,9 @@
+.git
+.github
+.agents
+.codex
+tests
+reports
+*.tar
+*.log
+README.md
