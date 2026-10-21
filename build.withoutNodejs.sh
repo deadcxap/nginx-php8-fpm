@@ -1,6 +1,4 @@
-#!/bin/bash
-
-docker build \
-    --build-arg APKMIRROR="mirrors.tuna.tsinghua.edu.cn" \
-    -f Dockerfile.withoutNodejs \
-    -t tangramor/nginx-php8-fpm:php8.5.4_withoutNodejs .
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export TARGET=without-node
+exec "$(dirname "${BASH_SOURCE[0]}")/build.sh" "$@"
