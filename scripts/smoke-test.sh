@@ -29,6 +29,29 @@ if [[ "$variant" == with-node ]]; then
 else
     docker run --rm "$image" sh -ec '! command -v node; ! command -v npm'
 fi
+runtime_tag=$(docker run --rm "$image" runtime-info --tag)
+expected_tag=$(docker run --rm "$image" sh -ec '
+    nginx_version=$(nginx -v 2>&1)
+    printf "nginx%s_php%s" "${nginx_version##*/}" "$(php -r "echo PHP_VERSION;")"
+    if command -v node >/dev/null; then printf "_node%s" "$(node -p process.versions.node)"; fi
+')
+[[ "$runtime_tag" == "$expected_tag" ]]
+
+check_startup_report() {
+    local expected_count=$1 logs
+    logs=$(docker logs "$container" 2>&1)
+    [[ "$(grep -Fc '=== Runtime versions ===' <<< "$logs")" == "$expected_count" ]]
+    [[ "$logs" == *"Image version tag: $runtime_tag"* ]]
+    [[ "$logs" == *'Composer version '* && "$logs" == *'Alpine Linux: '* ]]
+    [[ "$logs" == *'=== PHP modules ==='* && "$logs" == *$'\nredis\n'* && "$logs" == *$'\npdo_mysql\n'* ]]
+    [[ "$logs" == *'=== nginx build options ==='* && "$logs" == *'nginx-module-xslt-'* ]]
+    [[ "$logs" == *'=== End runtime information ==='* ]]
+    if [[ "$variant" == with-node ]]; then
+        [[ "$logs" == *'Node.js: '* && "$logs" == *'npm: '* ]]
+    else
+        [[ "$logs" == *'Node.js/npm: not installed'* && "$runtime_tag" != *_node* ]]
+    fi
+}
 
 wait_for_php() {
     local expected=$1 response
@@ -51,6 +74,7 @@ container=$(docker create "$image")
 docker cp tests/http-fixture.php "$container:/var/www/html/index.php"
 docker start "$container" >/dev/null
 wait_for_php '{"ok":true,"memory_limit":"128M","post_max_size":"100M","upload_max_filesize":"100M","timezone":"UTC"}'
+check_startup_report 1
 docker rm -f "$container" >/dev/null
 container=
 
@@ -79,6 +103,7 @@ docker restart --time 15 "$container" >/dev/null
 wait_for_php "$expected"
 config_after=$(docker exec "$container" sha256sum /usr/local/etc/php/conf.d/zz-runtime.ini /usr/local/etc/php-fpm.d/zzz-app.conf)
 [[ "$config_before" == "$config_after" ]]
+check_startup_report 2
 docker exec "$container" supervisorctl status
 docker rm -f "$container" >/dev/null
 container=

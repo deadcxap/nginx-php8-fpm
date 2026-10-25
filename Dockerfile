@@ -74,6 +74,7 @@ COPY conf/supervisord.conf /etc/supervisord.conf
 COPY conf/php-fpm.conf /etc/supervisor/conf.d/php-fpm.conf
 COPY conf/php-pool.conf /usr/local/etc/php-fpm.d/zzz-app.conf
 COPY conf/php-defaults.ini /usr/local/etc/php/conf.d/docker-vars.ini
+COPY --chmod=755 scripts/runtime-info.sh /usr/local/bin/runtime-info
 COPY --chmod=755 start.sh /start.sh
 COPY LICENSE /usr/share/licenses/nginx-php8-fpm/LICENSE
 

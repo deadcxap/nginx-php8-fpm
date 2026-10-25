@@ -102,15 +102,22 @@ not a guarantee that all known vulnerabilities have been fixed.
 | Tag | Contents |
 | --- | --- |
 | `latest` | nginx + PHP-FPM + Composer + Node.js/npm |
-| `without-node` | nginx + PHP-FPM + Composer |
-| `build-<run-id>-<attempt>` | A particular successful build with Node.js |
-| `build-<run-id>-<attempt>-without-node` | The corresponding build without Node.js |
+| `latest-without-node` | nginx + PHP-FPM + Composer |
+| `nginx<version>_php<version>_node<version>` | Image with the specified nginx, PHP and Node.js versions |
+| `nginx<version>_php<version>` | Image with the specified nginx and PHP versions, without Node.js |
 
-Both moving tags and the build tags contain amd64/arm64 manifests. The workflow
-also retains architecture-specific build tags. Build tags are unique per workflow
-attempt and are never reused by this workflow, even when the source commit has
-not changed. To roll back, use an earlier build tag or an image digest. Only
-`latest` and `without-node` move automatically.
+Version tags use the actual installed versions, including patch versions, for
+example `nginx1.28.0_php8.5.2_node25.6.0` or `nginx1.28.0_php8.5.2`. These names
+illustrate the format; available tags depend on successful builds. Versions must
+match between amd64 and arm64 for each variant before publication.
+
+Both the version tags and `latest` / `latest-without-node` contain amd64/arm64
+manifests. Architecture-specific images use the same version tag with an
+`-amd64` or `-arm64` suffix. A rebuild with the same nginx/PHP/Node.js versions
+updates the existing version tag, since extensions, npm or system packages may
+have changed. To pin an exact image or guarantee a rollback, use an image digest.
+The former `without-node` and `build-*` tags are no longer published or updated;
+existing registry tags are not deleted automatically.
 
 After the first successful publication:
 
@@ -138,17 +145,19 @@ The workflow in `.github/workflows/images.yml` runs:
 - through an authenticated `repository_dispatch` event of type `rebuild`.
 
 For each variant and architecture it builds once, records installed versions,
-tests the image, saves that same image as an archive, and scans it with Trivy.
-The gate rejects **HIGH/CRITICAL vulnerabilities with available fixes**. The full
+tests the image, saves that same image and its version tag as artifacts, and
+scans it with Trivy. The gate rejects **HIGH/CRITICAL vulnerabilities with available fixes**. The full
 JSON report also retains lower-severity and unfixed issues. Scanner/database
 errors fail the job; they do not bypass the gate. Reports are Actions artifacts
 retained for 30 days.
 
 Only after all four builds pass does a separate publishing job load those
-archives and push them to GHCR. It does not rebuild them. It creates unique build
-tags before updating the moving tags. A build, test or scan failure does not
-update either moving tag. Registry operations are not a transaction: a network
-error during the final two tag updates can leave them on different builds.
+archives and push them to GHCR. It does not rebuild them. It checks the version
+tags recorded on the native runners, publishes both versioned manifests, then
+updates `latest` and `latest-without-node`. A build, test, scan or version mismatch
+failure does not update either moving tag. Registry operations are not a
+transaction: a network error during the final two tag updates can leave them
+on different builds.
 
 To activate publication:
 
@@ -259,6 +268,14 @@ is always enabled, so `PHP_ERRORS_STDERR` is no longer needed. The default timez
 changed from `Asia/Shanghai` to `UTC`. Mirror overrides are opt-in. Node/npm are
 included; Yarn is not bundled.
 
+On every start and restart, the container also logs the installed Alpine, nginx,
+PHP and Composer versions, Node.js/npm versions when present, and the version tag
+derived from nginx/PHP/Node.js. The report lists enabled PHP modules, nginx build
+options and installed nginx dynamic-module packages. View it with
+`docker compose logs app`, or print it again with
+`docker compose exec app runtime-info`. `runtime-info --tag` prints only the
+version tag and is used by the publishing workflow.
+
 On startup, the following optional application files are copied before applying
 environment overrides:
 
@@ -303,6 +320,9 @@ Node crypto, offline npm packing/installation and npx execution, HTTP execution 
 runtime overrides, Laravel directory permissions and container restart. Bind-mount
 checks verify PHP worker IDs, ownership and modes of created files/directories,
 nginx access, unchanged application ownership and invalid runtime settings.
+It also checks version-tag generation and the startup report before and after
+a restart. `python3 tests/publish-check.py` verifies publication tags and failure
+handling without contacting a registry.
 
 To install another extension in your own image:
 
@@ -314,5 +334,5 @@ ENV WEBROOT=/var/www/html/public
 ```
 
 Application Composer/npm dependencies remain your application's responsibility.
-Use the version reports and build tags to test application compatibility before
+Use the version reports and version tags to test application compatibility before
 deploying a newly built base image.

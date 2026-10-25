@@ -5,7 +5,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 target=${TARGET:-with-node}
 case "$target" in
     with-node) default_tag=latest ;;
-    without-node) default_tag=without-node ;;
+    without-node) default_tag=latest-without-node ;;
     *) echo 'TARGET must be with-node or without-node.' >&2; exit 1 ;;
 esac
 image=${IMAGE:-ghcr.io/deadcxap/nginx-php8-fpm:$default_tag}

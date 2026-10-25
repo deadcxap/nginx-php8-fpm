@@ -137,5 +137,8 @@ fi
 
 nginx -t
 php-fpm -t
+if ! /usr/local/bin/runtime-info; then
+    echo 'Could not report all runtime versions and modules.' >&2
+fi
 # Supervisor otherwise resets its own and its children's mask to 022.
 exec /usr/bin/supervisord -n -c /etc/supervisord.conf --umask "$worker_umask"
