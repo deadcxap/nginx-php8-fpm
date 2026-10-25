@@ -9,6 +9,56 @@ The original project is [tangramor/nginx-php8-fpm](https://github.com/tangramor/
 Its BSD-3-Clause license and attribution are retained. The build no longer uses
 the original author's prebuilt image.
 
+## Quick start with Docker Compose
+
+Two standalone examples are included:
+
+- [compose.yaml](compose.yaml) — nginx + PHP-FPM + Composer + Node.js/npm.
+- [compose.without-node.yaml](compose.without-node.yaml) — the same stack without Node.js/npm.
+
+Requires Docker Engine and the Docker Compose plugin (`docker compose`). Put your
+PHP application in `app/` next to the Compose files; it is mounted at
+`/var/www/html`. For Laravel or another application with a `public/` directory,
+change `WEBROOT` in the chosen file to `/var/www/html/public`.
+
+From the repository root, run one of the examples:
+
+```sh
+# With Node.js/npm:
+docker compose up -d
+
+# Or without Node.js/npm:
+docker compose -f compose.without-node.yaml up -d
+```
+
+Open [http://localhost:8080](http://localhost:8080). Compose downloads the image
+on first launch; see [first publication](#github-actions-and-first-publication)
+if the GHCR image is not yet available or requires registry access.
+
+Edit the host port (`8080`), timezone and worker IDs directly in the Compose file.
+The examples use `PUID=1000`, `PGID=1000`, `UMASK=022`; on Linux, use the application
+owner's `id -u` and `id -g`, or `PUID=99`, `PGID=100` on Unraid. Keep the default
+root startup user so the image can apply these IDs before starting the workers.
+Application dependency installation follows your project's own instructions.
+
+Both files contain an optional MariaDB example **in comments**. To enable it,
+uncomment the `db` service, the `db-data` volume and the application's `DB_*`
+settings, and change the example passwords. The application connects to
+`db:3306`; MariaDB data is kept in a named volume across `down`/`up`.
+
+```sh
+docker compose logs -f app
+docker compose down
+
+# Update the image and recreate the container:
+docker compose pull
+docker compose up -d
+```
+
+For the variant without Node.js, add `-f compose.without-node.yaml` to each
+`docker compose` command. See [runtime configuration](#runtime-configuration)
+for additional environment settings and writable-directory permissions.
+
 ## Update policy
 
 | Component | Default source |

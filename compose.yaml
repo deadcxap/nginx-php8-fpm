@@ -1,0 +1,36 @@
+services:
+  app:
+    image: ghcr.io/deadcxap/nginx-php8-fpm:latest
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./app:/var/www/html
+    environment:
+      WEBROOT: /var/www/html # Use /var/www/html/public for Laravel.
+      TZ: UTC
+      PUID: "1000" # Application owner's UID; use 99 on Unraid.
+      PGID: "1000" # Application owner's GID; use 100 on Unraid.
+      UMASK: "022"
+      # DB_CONNECTION: mysql
+      # DB_HOST: db
+      # DB_PORT: "3306"
+      # DB_DATABASE: app
+      # DB_USERNAME: app
+      # DB_PASSWORD: change-me
+
+  # Optional MariaDB example: uncomment this service, the volume below and
+  # the DB_* settings above. Change the passwords before use.
+  # db:
+  #   image: mariadb:11.8
+  #   restart: unless-stopped
+  #   environment:
+  #     MARIADB_ROOT_PASSWORD: change-me-root
+  #     MARIADB_DATABASE: app
+  #     MARIADB_USER: app
+  #     MARIADB_PASSWORD: change-me
+  #   volumes:
+  #     - db-data:/var/lib/mysql
+
+# volumes:
+#   db-data:

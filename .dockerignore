@@ -2,6 +2,8 @@
 .github
 .agents
 .codex
+compose*.yaml
+app
 tests
 reports
 *.tar
