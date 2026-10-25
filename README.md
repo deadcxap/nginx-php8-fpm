@@ -304,6 +304,121 @@ The mask affects newly created files; it does not change permissions of existing
 files or grant access to directories. Default file modes are 0644 with `022` and
 0664 with `002`, unless the application explicitly requests stricter permissions.
 
+### Overriding nginx, PHP and Node.js settings
+
+Runtime settings can be changed without rebuilding the image. Use the environment
+variables above for common options and mount your own files for other settings.
+For example, create `compose.override.yaml` next to `compose.yaml`:
+
+```yaml
+services:
+  app:
+    environment:
+      PHP_MEM_LIMIT: "512"
+      PHP_POST_MAX_SIZE: "128"
+      PHP_UPLOAD_MAX_FILESIZE: "120"
+      NODE_OPTIONS: "--max-old-space-size=1024"
+    volumes:
+      - ./docker/php.ini:/usr/local/etc/php/conf.d/zzz-custom.ini:ro
+      - ./docker/nginx-site.conf:/var/www/html/conf/nginx-site.conf:ro
+```
+
+Compose automatically merges this file with `compose.yaml`, keeping the existing
+application mount, ports and other environment variables. Create both mounted
+files before starting the container so missing paths are not created as
+directories.
+
+Prepare the nginx site configuration from the repository root:
+
+```sh
+mkdir -p docker
+cp conf/default.conf docker/nginx-site.conf
+```
+
+Edit `docker/nginx-site.conf` and add the following inside its existing `server`
+block to allow the larger PHP uploads from the example:
+
+```nginx
+client_max_body_size 128m;
+```
+
+The site file replaces the complete default site configuration; it is not a
+snippet. The nginx body limit and PHP `post_max_size` must accommodate the upload
+and its request overhead, so the example leaves room above the 120 MiB file
+limit. To replace the main nginx configuration, start from `conf/nginx.conf`
+and mount your file at `/var/www/html/conf/nginx.conf`. The SSL site path is
+listed in the table above.
+
+On each start, `start.sh` copies these nginx files and then applies environment
+overrides: `WEBROOT` rewrites `root` directives in `default*.conf`, and
+`HIDE_NGINX_HEADERS` adjusts `server_tokens` in the main configuration. Mount
+the source files at `/var/www/html/conf/` as shown; mounting the working files
+directly at `/etc/nginx/nginx.conf` or `/etc/nginx/conf.d/default.conf` read-only
+would prevent the startup script from updating them.
+
+Create `docker/php.ini` with additional PHP settings, for example:
+
+```ini
+max_execution_time = 120
+max_input_vars = 5000
+opcache.memory_consumption = 256
+```
+
+The three `PHP_*` size variables in the Compose example accept integer MiB
+values without an `M` suffix. PHP loads additional INI files in alphabetical
+order, so `zzz-custom.ini` loads after the image defaults and the generated
+`zz-runtime.ini`. If the same directive is set both by an environment variable
+and in `zzz-custom.ini`, the custom file takes precedence. Do not edit
+`zz-runtime.ini` directly: it is regenerated at every start. See the
+[PHP configuration documentation](https://www.php.net/manual/en/configuration.file.php).
+
+PHP-FPM pool settings such as `pm.max_children` belong in a separate `.conf`
+file, not in `php.ini`. For example, create `docker/php-fpm.conf`:
+
+```ini
+[www]
+pm.max_children = 32
+pm.start_servers = 4
+pm.min_spare_servers = 4
+pm.max_spare_servers = 16
+```
+
+Add this entry to `services.app.volumes` in the override file:
+
+```yaml
+- ./docker/php-fpm.conf:/usr/local/etc/php-fpm.d/zzzz-custom.conf:ro
+```
+
+The filename places it after the bundled `zzz-app.conf`, overriding the specified
+pool settings while keeping the existing worker user and socket configuration.
+
+For Node.js, use [`NODE_OPTIONS`](https://nodejs.org/api/cli.html#node_optionsoptions)
+for supported runtime flags. The example limits V8's old memory section to
+1024 MiB; it does not set a limit for the entire container. Set `NPMMIRROR` to
+change the npm registry. The image includes Node.js/npm but does not automatically
+start a Node.js application. Configure a long-running application separately,
+for example with a Supervisor program file in `/etc/supervisor/conf.d/`.
+
+After editing Compose or the mounted files, validate the merged configuration
+and recreate the container:
+
+```sh
+docker compose config --quiet
+docker compose up -d --force-recreate app
+docker compose logs app
+```
+
+For the variant without Node.js, omit `NODE_OPTIONS` and specify both files
+explicitly on each command, for example:
+
+```sh
+docker compose -f compose.without-node.yaml -f compose.override.yaml up -d --force-recreate app
+```
+
+The startup script checks nginx and PHP-FPM configuration before starting their
+processes. Use `docker compose exec app php --ini` to inspect the loaded PHP INI
+files and `docker compose exec app nginx -T` to inspect the nginx configuration.
+
 ## PHP extensions and derived images
 
 Besides the official PHP image's built-in extensions, the image installs:
