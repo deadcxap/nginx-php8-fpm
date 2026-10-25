@@ -8,4 +8,4 @@ tests
 reports
 *.tar
 *.log
-README.md
+README*.md
